@@ -1,6 +1,6 @@
 # mimo_proxy
 
-OpenAI-compatible proxy server for [MiMo Code](https://github.com/nicepkg/mimocode) CLI.
+OpenAI-compatible proxy server for [MiMo Code](https://github.com/XiaomiMiMo/MiMo-Code) CLI.
 
 Exposes standard OpenAI API endpoints and forwards requests to the local `mimo` agent.
 
@@ -16,7 +16,7 @@ Exposes standard OpenAI API endpoints and forwards requests to the local `mimo` 
 
 ```bash
 # Install MiMo Code (if not installed)
-# See: https://github.com/nicepkg/mimocode
+# See: https://github.com/XiaomiMiMo/MiMo-Code
 
 # Build and run
 go build -o mimo_proxy .
@@ -68,7 +68,7 @@ for chunk in stream:
 ## Requirements
 
 - Go 1.21+
-- `mimo` CLI in PATH ([MiMo Code](https://github.com/nicepkg/mimocode))
+- `mimo` CLI in PATH ([MiMo Code](https://github.com/XiaomiMiMo/MiMo-Code))
 
 ## Configuration
 
