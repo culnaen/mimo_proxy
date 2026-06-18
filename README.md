@@ -9,6 +9,7 @@ Exposes standard OpenAI API endpoints and forwards requests to the local `mimo` 
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/v1/chat/completions` | Chat completions (OpenAI-compatible) |
+| `POST` | `/v1/messages` | Messages (Anthropic-compatible) |
 | `GET` | `/v1/models` | List available models |
 | `GET` | `/health` | Health check |
 
@@ -74,9 +75,10 @@ for chunk in stream:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `listenAddr` | `0.0.0.0:8080` | Listen address (edit in source) |
-| `mimoBinary` | `mimo` | Path to mimo binary |
-| `modelName` | `mimo-code` | Model name reported to clients |
+| `MIMO_LISTEN_ADDR` | `0.0.0.0:8080` | Listen address |
+| `MIMO_BINARY` | `mimo` | Path to mimo binary |
+| `MIMO_MODEL` | `mimo-code` | Model name reported to clients |
+| `MIMO_MODELS_CONFIG` | `~/.mimocode/models.json` | Custom models config path |
 
 ## Notes
 

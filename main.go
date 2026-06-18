@@ -15,7 +15,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 )
@@ -69,14 +68,12 @@ type Message struct {
 }
 
 type ToolCall struct {
-	ID       string       `json:"id"`
-	Type     string       `json:"type"`
-	Function FunctionCall `json:"function"`
-}
-
-type FunctionCall struct {
-	Name      string `json:"name"`
-	Arguments string `json:"arguments"`
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
 }
 
 type ChatResponse struct {
@@ -284,7 +281,9 @@ func main() {
 		log.Println("Shutting down gracefully...")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		srv.Shutdown(shutdownCtx)
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Printf("shutdown: %v", err)
+		}
 	}()
 
 	log.Printf("MiMo proxy listening on %s", listenAddr)
@@ -656,16 +655,16 @@ func syncOpenAI(w http.ResponseWriter, prompt, variant, sessionID string) {
 		reasoning = &result.Reasoning
 	}
 
-	var toolCalls []ToolCall
-	for _, tc := range result.ToolCalls {
-		toolCalls = append(toolCalls, ToolCall{
+	toolCalls := make([]ToolCall, len(result.ToolCalls))
+	for i, tc := range result.ToolCalls {
+		toolCalls[i] = ToolCall{
 			ID:   tc.ID,
 			Type: "function",
-			Function: FunctionCall{
-				Name:      tc.Name,
-				Arguments: tc.Arguments,
-			},
-		})
+			Function: struct {
+				Name      string `json:"name"`
+				Arguments string `json:"arguments"`
+			}{Name: tc.Name, Arguments: tc.Arguments},
+		}
 	}
 
 	finishReason := "stop"
@@ -738,7 +737,6 @@ func streamOpenAI(w http.ResponseWriter, prompt, variant string, opts *StreamOpt
 	}
 
 	var (
-		mu            sync.Mutex
 		promptTokens  int
 		compTokens    int
 		reasonTokens  int
@@ -761,11 +759,9 @@ func streamOpenAI(w http.ResponseWriter, prompt, variant string, opts *StreamOpt
 		}
 
 		if event.SessionID != "" {
-			mu.Lock()
 			if respSessionID == "" {
 				respSessionID = event.SessionID
 			}
-			mu.Unlock()
 		}
 
 		switch event.Type {
@@ -790,13 +786,11 @@ func streamOpenAI(w http.ResponseWriter, prompt, variant string, opts *StreamOpt
 		case "step_finish":
 			var part MimoStepFinishPart
 			if err := json.Unmarshal(event.Part, &part); err == nil {
-				mu.Lock()
 				totalTokens = part.Tokens.Total
 				promptTokens = part.Tokens.Input
 				compTokens = part.Tokens.Output
 				reasonTokens = part.Tokens.Reasoning
 				finishReason = mapFinishReason(part.Reason)
-				mu.Unlock()
 			}
 		}
 	}
@@ -906,15 +900,12 @@ func streamAnthropic(w http.ResponseWriter, prompt, variant string, req Anthropi
 	}
 
 	var (
-		mu           sync.Mutex
 		promptTokens int
 		compTokens   int
 		reasonTokens int
 		blockIndex   int
 		inThinking   bool
 		inText       bool
-		thinkingBuf  strings.Builder
-		textBuf      strings.Builder
 	)
 
 	scanner := bufio.NewScanner(stdout)
@@ -942,7 +933,6 @@ func streamAnthropic(w http.ResponseWriter, prompt, variant string, req Anthropi
 						Delta: map[string]interface{}{"index": idx, "content_block": map[string]interface{}{"type": "thinking"}},
 					})
 				}
-				thinkingBuf.WriteString(part.Text)
 				idx := blockIndex
 				sendAnthropicEvent(w, flusher, AnthropicStreamEvent{
 					Type:  "content_block_delta",
@@ -959,7 +949,6 @@ func streamAnthropic(w http.ResponseWriter, prompt, variant string, req Anthropi
 						Type: "content_block_stop", Delta: map[string]interface{}{"index": idx},
 					})
 					blockIndex++
-					thinkingBuf.Reset()
 				}
 				if !inText {
 					inText = true
@@ -969,7 +958,6 @@ func streamAnthropic(w http.ResponseWriter, prompt, variant string, req Anthropi
 						Delta: map[string]interface{}{"index": idx, "content_block": map[string]interface{}{"type": "text"}},
 					})
 				}
-				textBuf.WriteString(part.Text)
 				idx := blockIndex
 				sendAnthropicEvent(w, flusher, AnthropicStreamEvent{
 					Type:  "content_block_delta",
@@ -979,11 +967,9 @@ func streamAnthropic(w http.ResponseWriter, prompt, variant string, req Anthropi
 		case "step_finish":
 			var part MimoStepFinishPart
 			if err := json.Unmarshal(event.Part, &part); err == nil {
-				mu.Lock()
 				promptTokens = part.Tokens.Input
 				compTokens = part.Tokens.Output
 				reasonTokens = part.Tokens.Reasoning
-				mu.Unlock()
 			}
 		}
 	}
@@ -1018,13 +1004,21 @@ func streamAnthropic(w http.ResponseWriter, prompt, variant string, req Anthropi
 // SSE helpers
 
 func sendSSE(w http.ResponseWriter, flusher http.Flusher, chunk StreamChunk) {
-	data, _ := json.Marshal(chunk)
+	data, err := json.Marshal(chunk)
+	if err != nil {
+		log.Printf("sendSSE marshal: %v", err)
+		return
+	}
 	fmt.Fprintf(w, "data: %s\n\n", data)
 	flusher.Flush()
 }
 
 func sendAnthropicEvent(w http.ResponseWriter, flusher http.Flusher, event AnthropicStreamEvent) {
-	data, _ := json.Marshal(event)
+	data, err := json.Marshal(event)
+	if err != nil {
+		log.Printf("sendAnthropicEvent marshal: %v", err)
+		return
+	}
 	fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event.Type, data)
 	flusher.Flush()
 }
